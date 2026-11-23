@@ -295,88 +295,26 @@
     </section>
   </main>
 
-  <script type="module">
-    import {
-      FilesetResolver,
-      HandLandmarker,
-      PoseLandmarker
-    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm";
-
+  <script>
     // =========================================================================
-    // 1. 11개 한국어 문장 퀘스트 데이터 (원본과 동일)
+    // 1. 11개 한국어 문장 퀘스트 데이터
     // =========================================================================
     const SENTENCES = [
-      {
-        id: 1,
-        korean: "선생님 질문 있어요",
-        glosses: ["선생님", "질문", "있다"],
-        hint: "선생님 → 질문 → 있다 순서로 수어를 이어보세요!"
-      },
-      {
-        id: 2,
-        korean: "화장실 가고 싶어요",
-        glosses: ["화장실", "가다", "싶다"],
-        hint: "화장실 → 가다 → 원하다/싶다 동작을 연결해보세요."
-      },
-      {
-        id: 3,
-        korean: "우리 함께 밥 먹자",
-        glosses: ["우리", "함께", "밥", "먹다"],
-        hint: "우리 → 함께 → 밥 → 먹다 순서로 표현해보세요!"
-      },
-      {
-        id: 4,
-        korean: "너 책 빌릴 수 있어?",
-        glosses: ["너", "책", "빌리다", "가능"],
-        hint: "너 → 책 → 빌리다 → 가능 동작을 차례로 해보세요."
-      },
-      {
-        id: 5,
-        korean: "지금 몇 시야?",
-        glosses: ["지금", "시간"],
-        hint: "지금 → 시간 수어를 이어서 표현해보세요."
-      },
-      {
-        id: 6,
-        korean: "다음 수업 뭐야?",
-        glosses: ["다음", "수업", "무엇"],
-        hint: "다음 → 수업 → 무엇 순서로 동작을 취해보세요."
-      },
-      {
-        id: 7,
-        korean: "나중에 다시 하자",
-        glosses: ["나중", "다시"],
-        hint: "나중 → 다시 수어를 이어보세요."
-      },
-      {
-        id: 8,
-        korean: "내 꿈은 뭐게?",
-        glosses: ["꿈", "무엇"],
-        hint: "꿈 → 무엇 수어를 차례로 표현해보세요."
-      },
-      {
-        id: 9,
-        korean: "나 좀 도와줘",
-        glosses: ["나", "도움", "주다"],
-        hint: "나 → 도움 → 주다 동작을 연결해보세요."
-      },
-      {
-        id: 10,
-        korean: "미안해, 늦었어",
-        glosses: ["미안하다", "시간"],
-        hint: "미안하다 → 시간/늦음 표현을 이어보세요."
-      },
-      {
-        id: 11,
-        korean: "오늘 기분 좋아",
-        glosses: ["나", "기분", "좋다"],
-        hint: "나 → 기분 → 좋다 순서로 수어를 해보세요!"
-      }
+      { id: 1, korean: "선생님 질문 있어요", glosses: ["선생님", "질문", "있다"] },
+      { id: 2, korean: "화장실 가고 싶어요", glosses: ["화장실", "가다", "싶다"] },
+      { id: 3, korean: "우리 함께 밥 먹자", glosses: ["우리", "함께", "밥+먹다"] },
+      { id: 4, korean: "너 책 빌릴 수 있어?", glosses: ["너", "책", "빌리다", "가능"] },
+      { id: 5, korean: "지금 몇 시야?", glosses: ["지금", "시간"] },
+      { id: 6, korean: "다음 수업 뭐야?", glosses: ["다음", "수업", "무엇"] },
+      { id: 7, korean: "나중에 다시 하자", glosses: ["나중", "다시"] },
+      { id: 8, korean: "내 꿈은 뭐게?", glosses: ["꿈", "무엇"] },
+      { id: 9, korean: "나 좀 도와줘", glosses: ["나", "도움", "주다"] },
+      { id: 10, korean: "미안해, 늦었어", glosses: ["미안하다", "시간"] },
+      { id: 11, korean: "오늘 기분 좋아", glosses: ["나", "기분", "좋다"] }
     ];
 
     const CONFIDENCE_THRESHOLD = 0.55;
-    const HOLD_DURATION_MS = 1100;
-    const SEQ_LENGTH = 30;
+    const HOLD_DURATION_MS = 800;
     const STORAGE_KEY = "ksl_sunny_quest_backend_url";
     const DEFAULT_BACKEND_URL = "https://suhwa-ai-backend.onrender.com";
 
@@ -399,31 +337,51 @@
     let visionInitPromise = null;
 
     // =========================================================================
-    // 2. 백엔드 URL 해석 (GitHub Pages / Vercel / Cloudflare Pages / 로컬 지원)
+    // 2. 백엔드 URL 정제 (괄호/마크다운 링크/오타 자동 복구)
     // =========================================================================
-    function getBackendHttpBase() {
-      const inputVal = (document.getElementById("backend-url-input")?.value || "").trim();
-      const savedVal = (localStorage.getItem(STORAGE_KEY) || "").trim();
-      const raw = inputVal || savedVal || DEFAULT_BACKEND_URL;
-
-      let cleaned = raw.replace(/\/+$/, "");
-      if (cleaned.startsWith("wss://")) cleaned = "https://" + cleaned.slice(6);
-      else if (cleaned.startsWith("ws://")) cleaned = "http://" + cleaned.slice(5);
-      else if (!cleaned.startsWith("http://") && !cleaned.startsWith("https://")) {
-        cleaned = "https://" + cleaned;
+    function sanitizeBackendUrl(raw) {
+      if (!raw) return DEFAULT_BACKEND_URL;
+      let s = String(raw).trim();
+      // 마크다운 링크 "[url](url)" 형태면 첫 URL 추출
+      const mdMatch = s.match(/\[(https?:\/\/[^\]]+)\]/);
+      if (mdMatch) s = mdMatch[1];
+      // 앞뒤 대괄호/소괄호/따옴표 제거
+      s = s.replace(/^[\[\(\"']+|[\]\)\"']+$/g, "").trim();
+      // 옛날 오타 자동 교정
+      if (s.includes("suhwa-ai-backend.onrendet")) {
+        s = s.replace("suhwa-ai-backend.onrendet", "suhwa-ai-backend.onrender.com");
       }
-      return cleaned;
+      if (!s) return DEFAULT_BACKEND_URL;
+      s = s.replace(/\/+$/, "");
+      if (s.startsWith("wss://")) s = "https://" + s.slice(6);
+      else if (s.startsWith("ws://")) s = "http://" + s.slice(5);
+      else if (!s.startsWith("http://") && !s.startsWith("https://")) {
+        s = "https://" + s;
+      }
+      return s;
+    }
+
+    function getBackendHttpBase() {
+      const inputEl = document.getElementById("backend-url-input");
+      const inputVal = (inputEl?.value || "").trim();
+      const savedVal = (localStorage.getItem(STORAGE_KEY) || "").trim();
+      const clean = sanitizeBackendUrl(inputVal || savedVal || DEFAULT_BACKEND_URL);
+      if (inputEl && inputEl.value !== clean) {
+        inputEl.value = clean;
+      }
+      localStorage.setItem(STORAGE_KEY, clean);
+      return clean;
     }
 
     function getBackendWsUrl() {
       const httpBase = getBackendHttpBase();
       if (httpBase.startsWith("https://")) return "wss://" + httpBase.slice(8) + "/ws";
       if (httpBase.startsWith("http://")) return "ws://" + httpBase.slice(7) + "/ws";
-      return "ws://127.0.0.1:8000/ws";
+      return "wss://suhwa-ai-backend.onrender.com/ws";
     }
 
     // =========================================================================
-    // 3. 브라우저 내 MediaPipe Tasks (Hand + Pose) 초기화
+    // 3. 브라우저 내 MediaPipe Tasks (Hand + Pose) 동적 로드 및 초기화
     // =========================================================================
     async function ensureBrowserVisionModels() {
       if (handLandmarker && poseLandmarker) return true;
@@ -432,7 +390,10 @@
       visionInitPromise = (async () => {
         const statusEl = document.getElementById("backend-status");
         try {
-          statusEl.textContent = "브라우저 AI 랜드마크 모델 로딩 중 (WASM/WebGL)...";
+          if (statusEl) statusEl.textContent = "브라우저 AI 랜드마크 모델 로딩 중 (WASM/WebGL)...";
+          const mp = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm");
+          const { FilesetResolver, HandLandmarker, PoseLandmarker } = mp;
+
           const vision = await FilesetResolver.forVisionTasks(
             "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
           );
@@ -480,7 +441,7 @@
           return true;
         } catch (err) {
           console.error("Browser MediaPipe init error:", err);
-          statusEl.textContent = "브라우저 랜드마크 초기화 실패: " + err.message;
+          if (statusEl) statusEl.textContent = "브라우저 랜드마크 초기화 실패: " + err.message;
           return false;
         } finally {
           visionInitPromise = null;
@@ -601,37 +562,52 @@
     }
 
     // =========================================================================
-    // 5. UI 렌더링 및 진행 상태 관리
+    // 5. 보드 & 아레나 뷰 렌더링
     // =========================================================================
     function renderBoard() {
-      const listEl = document.getElementById("sentence-list");
-      listEl.innerHTML = "";
+      const gridEl = document.getElementById("sentence-grid");
+      const countEl = document.getElementById("completed-count");
+      if (countEl) countEl.textContent = String(completedSentenceIds.size);
+      if (!gridEl) return;
 
+      gridEl.innerHTML = "";
       SENTENCES.forEach((s, idx) => {
-        const isCurrent = idx === currentSentenceIdx;
         const isDone = completedSentenceIds.has(s.id);
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = `w-full text-left px-3.5 py-2.5 rounded-xl border transition flex items-center justify-between ${
-          isCurrent
-            ? "bg-amber-100 border-amber-400 font-bold text-amber-950 shadow-sm"
-            : isDone
-            ? "bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100"
-            : "bg-white border-stone-200 text-stone-700 hover:bg-amber-50/60"
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = `game-card p-5 text-left flex flex-col justify-between gap-4 cursor-pointer ${
+          isDone ? "completed" : ""
         }`;
-        btn.innerHTML = `
-          <span class="truncate pr-2"><span class="text-xs text-stone-400 mr-1.5">${s.id}.</span>${s.korean}</span>
-          <span class="text-xs shrink-0">${isDone ? "✅ 완료" : isCurrent ? "▶ 진행중" : "대기"}</span>
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <span class="bg-amber-100 text-amber-900 border border-amber-300 px-3 py-1 rounded-full text-xs font-bold">
+              미션 #${s.id}
+            </span>
+            <span class="text-sm font-bold ${isDone ? "text-emerald-600" : "text-orange-500"}">
+              ${isDone ? "✅ 완료!" : "도전하기 →"}
+            </span>
+          </div>
+          <div>
+            <h3 class="text-2xl text-stone-900 mb-2">${s.korean}</h3>
+            <div class="flex flex-wrap gap-1.5">
+              ${s.glosses
+                .map(
+                  (g) =>
+                    `<span class="bg-yellow-100 text-amber-950 border border-amber-300 px-2.5 py-0.5 rounded-full text-xs">${g}</span>`
+                )
+                .join("")}
+            </div>
+          </div>
         `;
-        btn.addEventListener("click", () => selectSentence(idx));
-        listEl.appendChild(btn);
+        card.addEventListener("click", () => startSentenceQuest(idx));
+        gridEl.appendChild(card);
       });
+    }
 
+    function renderArena() {
       const current = SENTENCES[currentSentenceIdx];
-      document.getElementById("current-sentence-badge").textContent = `문장 #${current.id} / ${SENTENCES.length}`;
-      document.getElementById("target-korean-sentence").textContent = current.korean;
-      document.getElementById("quest-hint").textContent = current.hint;
-      document.getElementById("completed-count-text").textContent = `${completedSentenceIds.size} / ${SENTENCES.length} 완료`;
+      document.getElementById("arena-badge").textContent = `미션 #${current.id} / ${SENTENCES.length}`;
+      document.getElementById("arena-sentence-title").textContent = current.korean;
 
       const chipsEl = document.getElementById("gloss-steps-container");
       chipsEl.innerHTML = "";
@@ -639,63 +615,104 @@
         const done = idx < currentStepIdx;
         const active = idx === currentStepIdx && !sentenceCompletedFlag;
         const chip = document.createElement("div");
-        chip.className = `px-3.5 py-1.5 rounded-full text-sm font-bold border transition ${
-          done
-            ? "bg-emerald-500 text-white border-emerald-600"
-            : active
-            ? "bg-yellow-300 text-amber-950 border-amber-500 ring-2 ring-amber-300 scale-105"
-            : "bg-stone-100 text-stone-500 border-stone-200"
+        chip.className = `px-4 py-2 rounded-2xl text-base sm:text-lg font-bold transition ${
+          done ? "gloss-done" : active ? "gloss-active" : "gloss-pending"
         }`;
-        chip.textContent = `${idx + 1}. ${g} ${done ? "✓" : active ? "●" : ""}`;
+        chip.textContent = `${idx + 1}. ${g} ${done ? "✓" : ""}`;
         chipsEl.appendChild(chip);
       });
 
+      const activeGloss = current.glosses[currentStepIdx] || current.glosses[current.glosses.length - 1];
+      document.getElementById("active-gloss-display").textContent = activeGloss;
+
+      const compoundHintEl = document.getElementById("compound-hint");
+      if (activeGloss.includes("+")) {
+        compoundHintEl.classList.remove("hidden");
+      } else {
+        compoundHintEl.classList.add("hidden");
+      }
+
       updateMeters(0, 0);
+    }
+
+    function showBoard() {
+      stopWebcamAndSocket();
+      document.getElementById("arena-view").classList.add("hidden");
+      document.getElementById("board-view").classList.remove("hidden");
+      renderBoard();
+    }
+
+    async function startSentenceQuest(idx) {
+      currentSentenceIdx = idx;
+      currentStepIdx = 0;
+      holdAccumulatedMs = 0;
+      sentenceCompletedFlag = false;
+
+      document.getElementById("celebration-overlay").classList.add("hidden");
+      document.getElementById("board-view").classList.add("hidden");
+      document.getElementById("arena-view").classList.remove("hidden");
+      renderArena();
+
+      await startWebcamAndSocket();
+    }
+
+    function startRandomChallenge() {
+      const idx = Math.floor(Math.random() * SENTENCES.length);
+      startSentenceQuest(idx);
+    }
+
+    function resetAllProgress() {
+      completedSentenceIds.clear();
+      renderBoard();
+    }
+
+    function retryCurrentSentence() {
+      currentStepIdx = 0;
+      holdAccumulatedMs = 0;
+      sentenceCompletedFlag = false;
+      document.getElementById("celebration-overlay").classList.add("hidden");
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "reset_buffer" }));
+      }
+      renderArena();
+    }
+
+    function goToNextSentence() {
+      const nextIdx = (currentSentenceIdx + 1) % SENTENCES.length;
+      startSentenceQuest(nextIdx);
+    }
+
+    function skipCurrentStep() {
+      if (sentenceCompletedFlag) return;
+      advanceGlossStep();
     }
 
     function updateMeters(conf, holdRatio) {
       const clampedConf = Math.max(0, Math.min(1, conf));
       const clampedHold = Math.max(0, Math.min(1, holdRatio));
-      document.getElementById("conf-percent-text").textContent = `${Math.round(clampedConf * 100)}%`;
+      document.getElementById("conf-percent").textContent = `${Math.round(clampedConf * 100)}%`;
       document.getElementById("conf-bar").style.width = `${clampedConf * 100}%`;
-      document.getElementById("hold-percent-text").textContent = `${Math.round(clampedHold * 100)}%`;
+      document.getElementById("hold-percent").textContent = `${Math.round(clampedHold * 100)}%`;
       document.getElementById("hold-bar").style.width = `${clampedHold * 100}%`;
-    }
-
-    function resetStepProgress(sendResetToServer = true) {
-      holdAccumulatedMs = 0;
-      sentenceCompletedFlag = false;
-      updateMeters(0, 0);
-      document.getElementById("celebration-overlay").classList.add("hidden");
-      if (sendResetToServer && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "reset_buffer" }));
-      }
-    }
-
-    function selectSentence(idx) {
-      currentSentenceIdx = idx;
-      currentStepIdx = 0;
-      resetStepProgress(true);
-      renderBoard();
     }
 
     function advanceGlossStep() {
       const current = SENTENCES[currentSentenceIdx];
       holdAccumulatedMs = 0;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "reset_buffer" }));
+      }
+
       if (currentStepIdx + 1 < current.glosses.length) {
         currentStepIdx += 1;
-        updateMeters(0, 0);
-        renderBoard();
+        renderArena();
       } else {
         sentenceCompletedFlag = true;
         completedSentenceIds.add(current.id);
         renderBoard();
+        renderArena();
         launchConfetti();
-        document.getElementById("celebration-title").textContent = `"${current.korean}" 퀘스트 성공!`;
-        document.getElementById("celebration-sub").textContent =
-          currentSentenceIdx + 1 < SENTENCES.length
-            ? "다음 문장 퀘스트로 넘어가 볼까요?"
-            : "모든 문장 퀘스트를 완료했어요!";
+        document.getElementById("celebration-sentence").textContent = `"${current.korean}" 미션을 클리어했습니다!`;
         document.getElementById("celebration-overlay").classList.remove("hidden");
       }
     }
@@ -741,7 +758,6 @@
           const poseRes = poseLandmarker.detectForVideo(video, nowMs);
           const { features, overlay, handsVisible } = extract138FeaturesAndOverlay(handRes, poseRes);
 
-          // 1) 로컬 캔버스에 지연 없이 즉시 랜드마크 렌더링
           drawLandmarks(canvas, ctx, overlay);
 
           const handDot = document.getElementById("hand-dot");
@@ -754,7 +770,6 @@
             handText.textContent = "카메라에 손을 보여주세요";
           }
 
-          // 2) 이미지 대신 가벼운 138개 숫자 배열만 백엔드로 전송 (백업 대기 중이면 스킵해 큐 밀림 방지)
           if (
             !sentenceCompletedFlag &&
             !isAwaitingBackend &&
@@ -826,7 +841,7 @@
       ws.onerror = () => {
         isAwaitingBackend = false;
         document.getElementById("backend-status").textContent =
-          `분류 서버 연결 대기 중 (${wsUrl}) — 브라우저 손 인식은 동작 중`;
+          `분류 서버 깨우는 중 (${wsUrl}) — Render 무료 서버는 첫 연결에 최대 50초 걸릴 수 있어요`;
       };
 
       ws.onclose = () => {
@@ -902,53 +917,38 @@
     async function checkBackendStatus() {
       const base = getBackendHttpBase();
       const statusEl = document.getElementById("backend-status");
+      if (statusEl) {
+        statusEl.textContent = `백엔드(${base}) 깨우는 중... (아래 문장 카드를 바로 눌러 시작할 수 있어요)`;
+      }
       try {
         const res = await fetch(`${base}/api/status`);
         const data = await res.json();
-        statusEl.textContent = `${data.message} (브라우저 랜드마크 모드)`;
+        if (statusEl) statusEl.textContent = `${data.message} (브라우저 랜드마크 모드)`;
       } catch (e) {
-        statusEl.textContent = `백엔드(${base}) 대기 중 — '카메라 켜기'를 누르면 브라우저 랜드마크가 먼저 시작됩니다`;
+        if (statusEl) {
+          statusEl.textContent = `백엔드(${base}) 절전 해제 중 — 문장 카드를 누르면 브라우저 랜드마크가 먼저 시작됩니다`;
+        }
       }
     }
 
-    function bindUIEvents() {
-      const savedUrl = localStorage.getItem(STORAGE_KEY) || DEFAULT_BACKEND_URL;
+    function initApp() {
+      const savedUrl = sanitizeBackendUrl(localStorage.getItem(STORAGE_KEY) || DEFAULT_BACKEND_URL);
+      localStorage.setItem(STORAGE_KEY, savedUrl);
       const inputEl = document.getElementById("backend-url-input");
-      if (inputEl && savedUrl) inputEl.value = savedUrl;
+      if (inputEl) inputEl.value = savedUrl;
 
       document.getElementById("save-backend-url-btn")?.addEventListener("click", () => {
-        const val = (inputEl?.value || "").trim();
-        if (val) localStorage.setItem(STORAGE_KEY, val);
-        else localStorage.removeItem(STORAGE_KEY);
+        const clean = sanitizeBackendUrl(inputEl?.value || DEFAULT_BACKEND_URL);
+        if (inputEl) inputEl.value = clean;
+        localStorage.setItem(STORAGE_KEY, clean);
         checkBackendStatus();
         if (isRunning) startWebcamAndSocket();
       });
 
-      document.getElementById("start-btn")?.addEventListener("click", startWebcamAndSocket);
-      document.getElementById("stop-btn")?.addEventListener("click", stopWebcamAndSocket);
-      document.getElementById("reset-btn")?.addEventListener("click", () => resetStepProgress(true));
-      document.getElementById("prev-sentence-btn")?.addEventListener("click", () => {
-        const nextIdx = (currentSentenceIdx - 1 + SENTENCES.length) % SENTENCES.length;
-        selectSentence(nextIdx);
-      });
-      document.getElementById("next-sentence-btn")?.addEventListener("click", () => {
-        const nextIdx = (currentSentenceIdx + 1) % SENTENCES.length;
-        selectSentence(nextIdx);
-      });
-      document.getElementById("continue-btn")?.addEventListener("click", () => {
-        document.getElementById("celebration-overlay").classList.add("hidden");
-        if (currentSentenceIdx + 1 < SENTENCES.length) {
-          selectSentence(currentSentenceIdx + 1);
-        } else {
-          resetStepProgress(true);
-        }
-      });
-    }
-
-    async function initApp() {
-      bindUIEvents();
+      // 11개 카드를 즉시 렌더링 (네트워크/CDN 대기 없음)
       renderBoard();
-      await checkBackendStatus();
+      // 백그라운드에서 Render 깨우기 & MediaPipe 프리로드
+      checkBackendStatus();
     }
 
     initApp();
