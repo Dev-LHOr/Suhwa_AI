@@ -378,6 +378,7 @@
     const HOLD_DURATION_MS = 1100;
     const SEQ_LENGTH = 30;
     const STORAGE_KEY = "ksl_sunny_quest_backend_url";
+    const DEFAULT_BACKEND_URL = "https://suhwa-ai-backend.onrender.com";
 
     let currentSentenceIdx = 0;
     let currentStepIdx = 0;
@@ -403,22 +404,15 @@
     function getBackendHttpBase() {
       const inputVal = (document.getElementById("backend-url-input")?.value || "").trim();
       const savedVal = (localStorage.getItem(STORAGE_KEY) || "").trim();
-      const raw = inputVal || savedVal;
+      const raw = inputVal || savedVal || DEFAULT_BACKEND_URL;
 
-      if (raw) {
-        let cleaned = raw.replace(/\/+$/, "");
-        if (cleaned.startsWith("wss://")) cleaned = "https://" + cleaned.slice(6);
-        else if (cleaned.startsWith("ws://")) cleaned = "http://" + cleaned.slice(5);
-        else if (!cleaned.startsWith("http://") && !cleaned.startsWith("https://")) {
-          cleaned = "https://" + cleaned;
-        }
-        return cleaned;
+      let cleaned = raw.replace(/\/+$/, "");
+      if (cleaned.startsWith("wss://")) cleaned = "https://" + cleaned.slice(6);
+      else if (cleaned.startsWith("ws://")) cleaned = "http://" + cleaned.slice(5);
+      else if (!cleaned.startsWith("http://") && !cleaned.startsWith("https://")) {
+        cleaned = "https://" + cleaned;
       }
-
-      if (window.location.protocol === "http:" || window.location.protocol === "https:") {
-        return window.location.origin;
-      }
-      return "http://127.0.0.1:8000";
+      return cleaned;
     }
 
     function getBackendWsUrl() {
@@ -918,7 +912,7 @@
     }
 
     function bindUIEvents() {
-      const savedUrl = localStorage.getItem(STORAGE_KEY) || "";
+      const savedUrl = localStorage.getItem(STORAGE_KEY) || DEFAULT_BACKEND_URL;
       const inputEl = document.getElementById("backend-url-input");
       if (inputEl && savedUrl) inputEl.value = savedUrl;
 
